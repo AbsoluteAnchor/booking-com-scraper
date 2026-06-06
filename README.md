@@ -1,151 +1,152 @@
-[Booking Com Scraper](https://apify.com/knotless_cadence/booking-com-scraper?fpr=data)
+[Booking Com Scraper](https://apify.com/skipper_lume/booking-com-scraper?fpr=data)
 
-# Booking.com Scraper — Hotel Listings as JSON/CSV
+# Booking.com Scraper
 
-Scrape Booking.com search-results pages for hotels in any destination. Returns 16 fields per listing — name, URL, price, currency, review score, stars, review count, location, distance, image, plus the search context (dates, adults, rooms, destination, scraped timestamp).
+Scrape hotel data, prices, ratings, and reviews from Booking.com. Search by destination with dates or extract detailed property information from specific hotel URLs.
 
-**No API key, no Booking.com login, no Selenium/Playwright.** Uses Cheerio + Crawlee on the public search-results HTML.
+## Features
 
----
+- **Search mode**: Find hotels by destination + check-in/check-out dates
+- **Detail mode**: Extract full property info from hotel URLs
+- **Rich filters**: Star rating, price range, property type, review score, sort order
+- **Complete data**: Prices, discounts, reviews, amenities, room types, photos, coordinates
+- **Multi-currency**: Get prices in any currency Booking.com supports (USD, EUR, GBP, etc.)
+- **Multi-language**: Results in any Booking.com language (en-us, de, fr, nl, etc.)
+- **Pagination**: Automatically scrapes multiple pages of search results
+- **Anti-blocking**: Powered by [Crawlee](https://crawlee.dev/) — automatic fingerprint randomization, session pool with proxy rotation, block detection & retry
 
-## What this actor actually does (verified against `src/main.js`)
+## Input — Search Mode
 
-For every destination in your input, the actor:
-
-1. Builds a Booking.com search URL with your check-in/out dates, adults, rooms, currency, and sort order.
-2. Walks the paginated results (offsets `0`, `25`, `50`…) until either `maxResults` per destination is reached or no more cards appear.
-3. Parses each property card with Cheerio selectors (3-fallback chain: `[data-testid="property-card"]` → legacy `.sr_property_block` → `[data-testid="property-card-container"]`).
-4. Applies your `minPrice` / `maxPrice` / `minRating` filters in-memory before pushing.
-5. Writes one record per hotel to the dataset.
-
-That's it. ~30–90 sec per destination depending on `maxResults`.
-
----
-
-## Input
-
-```
-{
-  "destinations": ["Paris", "Tokyo", "London"],
-  "checkIn": "2026-06-15",
-  "checkOut": "2026-06-18",
-  "adults": 2,
-  "rooms": 1,
-  "maxResults": 50,
-  "currency": "USD",
-  "sortBy": "review_score",
-  "minPrice": 80,
-  "maxPrice": 400,
-  "minRating": 8.0
-}
-```
-
-| Field | Type | Default | Notes |
+| Field | Type | Default | Description |
 | --- | --- | --- | --- |
-| `destinations` | string[] | required | One Booking.com search per destination. |
-| `checkIn` | `YYYY-MM-DD` | tomorrow | If empty, the actor uses tomorrow's date. |
-| `checkOut` | `YYYY-MM-DD` | day after tomorrow | If empty, day after `checkIn`. |
-| `adults` | int 1–10 | 2 |  |
-| `rooms` | int 1–10 | 1 |  |
-| `maxResults` | int 1–500 | 50 | Cap **per destination**, not total. |
-| `currency` | enum | `USD` | One of: USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY, RUB, INR, BRL. |
-| `sortBy` | enum | `popularity` | One of: `popularity`, `price_asc`, `rating`, `review_score`, `distance`. |
-| `minPrice` | int / null | null | Per-night currency-units. Filter applied client-side. |
-| `maxPrice` | int / null | null | Same as above. |
-| `minRating` | number 0–10 / null | null | Filter on Booking review score. |
+| `mode` | string | `search` | Set to `search` |
+| `destination` | string | required | City, region, or hotel name |
+| `checkin` | string | +30 days | Check-in date (YYYY-MM-DD) |
+| `checkout` | string | +32 days | Check-out date (YYYY-MM-DD) |
+| `adults` | integer | 2 | Number of adults |
+| `rooms` | integer | 1 | Number of rooms |
+| `currency` | string | USD | Currency code |
+| `maxPages` | integer | 5 | Max pages to scrape (~25 hotels/page) |
+| `sortBy` | string | — | Sort: price, distance, review_score_and_price, etc. |
+| `stars` | array | — | Filter by stars, e.g. [4, 5] |
+| `minPrice` | integer | — | Min price per night |
+| `maxPrice` | integer | — | Max price per night |
+| `minReviewScore` | integer | — | Min score: 60/70/80/90 |
 
----
-
-## Output (one record per hotel)
+### Example Search Input
 
 ```
 {
-  "name": "Hotel Le Bristol Paris",
-  "url": "https://www.booking.com/hotel/fr/lebristol.html",
-  "price": 1240,
-  "currency": "USD",
-  "rating": 9.4,
-  "reviewCount": 1853,
-  "stars": 5,
-  "location": "8th arr., Paris",
-  "distance": "1.2 km from center",
-  "image": "https://cf.bstatic.com/.../bristol.jpg",
-  "destination": "Paris",
-  "checkIn": "2026-06-15",
-  "checkOut": "2026-06-18",
-  "adults": 2,
-  "rooms": 1,
-  "scrapedAt": "2026-04-29T13:30:00.000Z"
+    "mode": "search",
+    "destination": "Amsterdam, Netherlands",
+    "checkin": "2026-06-01",
+    "checkout": "2026-06-03",
+    "adults": 2,
+    "currency": "EUR",
+    "maxPages": 3,
+    "stars": [4, 5],
+    "sortBy": "review_score_and_price"
 }
 ```
 
-**16 fields per hotel.** All fields may be `null` when the property card doesn't expose them — Booking ships A/B card layouts and missing data is normal.
+## Input — Detail Mode
 
-### Field notes (be honest before you buy)
-
-- `price` is **whatever Booking displays on the card** — it can be per-night or total-stay depending on Booking's rendering for your locale and date range. Cross-check against the URL before treating as canonical.
-- `stars` is counted by DOM-element heuristic (span/svg count inside the rating element). Reliable for 1–5 hotels but can return `null` or off-by-one when Booking changes the markup.
-- `distance` is a free-text string (`"1.2 km from center"`, `"500 m from Eiffel Tower"`). No parsing into numeric km.
-- `reviewCount` parsing strips non-digits — works in most locales but can fail on RU/JP non-Latin formats.
-
----
-
-## What this actor does NOT do (be honest)
-
-- ❌ **No detail-page enrichment.** You get the search-card data only — no room types, no amenity list, no policies, no full review text.
-- ❌ **No JS rendering.** Pure Cheerio. If Booking moves a price into a JS-rendered modal (they sometimes do), that field becomes `null` until selectors are updated.
-- ❌ **No proxy rotation built in.** Booking doesn't aggressively block low-volume scraping, but at scale you should add Apify's residential proxy via the platform proxy config (and budget accordingly).
-- ❌ **No CAPTCHA solving.** If Booking serves a challenge, the run will return whatever it parsed before the block.
-- ❌ **No deduplication across destinations.** A hotel that appears under "Paris" and under a Paris-area neighborhood lookup will appear twice.
-- ❌ **No price history.** One snapshot per run. If you need price-tracking, schedule the run on Apify Cron and append to your own dataset/DB.
-- ❌ **No alternative sites.** Booking.com only — not Hotels.com, Expedia, Agoda, Trivago.
-
----
-
-## Common use cases
-
-- **Travel-aggregator side projects** — daily snapshots of top 50 hotels in 10 cities for a price-tracker dashboard.
-- **Market research** — competitor pricing in a destination for a hotel-chain or OTA team.
-- **Affiliate content** — populate "Top 10 hotels in Tokyo under $200" listicles with fresh data.
-- **Travel-agent automations** — feed search results into Slack/email when a target hotel drops below a price threshold.
-
----
-
-## When this actor stops being enough
-
-If you need any of the following, that's a custom build (we deliver):
-
-- Detail-page enrichment (amenities, room types, policies, review text)
-- Multi-site comparison (Booking + Hotels.com + Expedia + Agoda in one record)
-- Daily price-history with diff alerts
-- Geo-bounded search (lat/lng + radius)
-- Booking.com vacation-rentals or transport-search
-
-**Proof of delivery + urgency**: This actor has **22 lifetime production runs** as of May 2026 — part of an active 31-published portfolio (78 total). Trustpilot scraper alone: **951 lifetime runs**. Author shipped a paid 3-article series in March 2026 ($150, proxy industry). **Pilot pricing locked through May 2026** (table below).
-
-**Sample request?** Reply `sample` to [spinov001@gmail.com](mailto:spinov001@gmail.com) and you'll receive 2 published case-study articles within 24 hours, no obligation. Fastest way to evaluate writing style + technical depth before commissioning a custom build.
-
-| Tier | What you get | Price |
+| Field | Type | Description |
 | --- | --- | --- |
-| **Pilot** | 1 actor extension (e.g. detail-page enrichment), basic config, 7-day support | **$97** |
-| **Standard** | Custom multi-site or scheduled snapshot pipeline + Slack/email alerts, 30-day support | **$297** |
-| **Premium** | Full price-tracking dashboard + 90-day support + 1 modification round | **$797** |
+| `mode` | string | Set to `detail` |
+| `urls` | array | List of Booking.com hotel URLs |
 
-**Track record:** 31 published actors on Apify (78 total in portfolio), including:
+### Example Detail Input
 
-- `trustpilot-review-scraper` — 951 runs in 30d, used by data teams for review monitoring
-- `reddit-discussion-scraper` — Reddit JSON-API scraper at scale
-- `email-extractor-pro` — bulk website email harvester (no Hunter cap)
+```
+{
+    "mode": "detail",
+    "urls": [
+        "https://www.booking.com/hotel/nl/waldorf-astoria-amsterdam.html",
+        "https://www.booking.com/hotel/nl/the-dylan-amsterdam.html"
+    ]
+}
+```
 
-**Contact / sample work:**
+## Output — Search Results
 
-- Email: [spinov001@gmail.com](mailto:spinov001@gmail.com)
-- Blog & case studies: [https://blog.spinov.online](https://blog.spinov.online)
-- All actors: [https://apify.com/knotless_cadence](https://apify.com/knotless_cadence)
-- Telegram (scraping/AI tips): [https://t.me/scraping_ai](https://t.me/scraping_ai)
+Each hotel in search results includes:
 
----
+| Field | Description |
+| --- | --- |
+| `name` | Hotel name |
+| `url` | Direct Booking.com link |
+| `price` | Total price for stay |
+| `price_currency` | Currency code |
+| `original_price` | Price before discount |
+| `discount_percent` | Discount percentage |
+| `review_score` | Guest score (0-10) |
+| `review_count` | Number of reviews |
+| `review_word` | Rating label (Superb, Very Good, etc.) |
+| `stars` | Star rating (1-5) |
+| `location` | Neighborhood/area |
+| `distance_from_center` | Distance from center |
+| `free_cancellation` | Free cancellation available |
+| `breakfast_included` | Breakfast included |
+| `room_type` | Recommended room type |
+| `image` | Main photo URL |
 
-## License
+## Output — Hotel Details
 
-MIT — fork it, modify it, ship it.
+Detail mode returns comprehensive property data:
+
+| Field | Description |
+| --- | --- |
+| `hotel_id` | Booking.com hotel identifier (from URL) |
+| `description` | Hotel description (up to 1000 chars) |
+| `address` | Full street address |
+| `city` | City name |
+| `country` | Country code (GB, NL, ES, etc.) |
+| `stars` | Official star rating (1-5, extracted from page data) |
+| `review_score` | Overall guest score (0-10) |
+| `review_count` | Total number of reviews |
+| `review_word` | Rating label (Exceptional, Superb, Very Good, Good) |
+| `review_scores` | Per-category scores: Facilities, Cleanliness, Comfort, Location, etc. |
+| `amenities` | Popular hotel facilities (Free Wifi, Pool, Parking, etc.) |
+| `images` | Gallery photo URLs in max resolution |
+| `rooms` | Room types with bed configurations and max occupancy |
+| `checkin_time` / `checkout_time` | Check-in/out times (e.g. "3:00 PM" / "11:00 AM") |
+| `property_type` | Hotel, Hostel, Apartment, B&B, etc. |
+
+## Proxy Configuration
+
+Booking.com has strong anti-bot protection. **Residential proxies are recommended** for reliable results:
+
+```
+{
+    "proxyConfiguration": {
+        "useApifyProxy": true,
+        "apifyProxyGroups": ["RESIDENTIAL"]
+    }
+}
+```
+
+## Cost Estimate
+
+Using Apify residential proxies:
+
+- **Search**: ~$0.10-0.15 per page (25 hotels)
+- **Detail**: ~$0.05-0.10 per hotel page
+- **Typical run** (5 pages, 125 hotels): ~$0.50-0.75
+
+## How It Works
+
+This actor uses **Crawlee PlaywrightCrawler** with:
+
+- **Browser fingerprint randomization** — each request uses a unique browser fingerprint
+- **Session pool** — automatic proxy/session rotation when blocks are detected
+- **Smart retries** — blocked requests are retried with fresh sessions (up to 6 attempts)
+- **404 detection** — non-existent hotel pages are reported cleanly without wasting retries
+
+## Tips
+
+1. **Dates matter**: Prices vary significantly by dates. Always specify check-in/check-out.
+2. **Use filters**: Star rating and price filters reduce pages and speed up scraping.
+3. **Residential proxies**: Datacenter proxies get blocked quickly by Booking.com.
+4. **Currency**: Set currency to avoid conversion issues — Booking.com returns prices in the selected currency.
+5. **Memory**: Search mode works with 2 GB. Detail mode with multiple hotels may need 4 GB.
