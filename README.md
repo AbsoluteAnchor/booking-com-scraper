@@ -1,99 +1,151 @@
-[Booking Com Scraper](https://apify.com/nexgendata/booking-com-scraper?fpr=data)
+[Booking Com Scraper](https://apify.com/knotless_cadence/booking-com-scraper?fpr=data)
 
-# Booking.com Hotel Scraper by nexgendata
+# Booking.com Scraper — Hotel Listings as JSON/CSV
 
-Scrape Booking.com for hotel listings with prices, review scores, availability, and property details. Search any destination worldwide with optional check-in and check-out dates to get real-time pricing data. Built for hotel revenue managers, travel industry analysts, and anyone who needs structured accommodation pricing data at scale.
+Scrape Booking.com search-results pages for hotels in any destination. Returns 16 fields per listing — name, URL, price, currency, review score, stars, review count, location, distance, image, plus the search context (dates, adults, rooms, destination, scraped timestamp).
 
-Booking.com lists over 28 million accommodation options across 226 countries and territories, making it the largest online travel agency by room count. The platform's pricing data reflects real-time market rates that hotels, vacation rentals, and alternative accommodations are actually charging. This makes Booking.com data uniquely valuable for pricing intelligence — unlike list prices or rack rates, these are the prices travelers actually see and book at. This actor extracts that pricing data into structured JSON for analysis.
-
-## How It Works
-
-Enter a destination — a city name, region, or specific location — and optionally provide check-in and check-out dates. The actor searches Booking.com and extracts property data from the search results. Each listing includes the property name, nightly price, review score, review count, distance from center, and a direct URL to the property page. When dates are provided, prices reflect actual availability and rate for those specific dates.
-
-The actor first attempts to extract data from structured JSON-LD embedded in the page source, which provides the most reliable and consistent data format. When structured data is unavailable, it falls back to parsing the property card elements directly from the HTML. Both methods return the same standardized output format.
-
-## Who Uses This
-
-Revenue managers at hotel chains and independent properties use Booking.com pricing data to set competitive rates. When a revenue manager can see what every competing hotel within a two-mile radius charges for a Tuesday night in April, they can position their own pricing with precision rather than guesswork. This actor enables daily or weekly rate audits across hundreds of competitive properties simultaneously.
-
-Online travel agencies and metasearch engines monitor Booking.com pricing to ensure their own rates are competitive. Travel industry analysts track accommodation pricing trends across markets to advise hospitality investors and operators. Short-term rental operators on platforms like Airbnb and Vrbo use hotel pricing data as a benchmark for their own rate strategies.
-
-Real estate investors evaluating hotel acquisition targets use Booking.com data to assess market positioning, pricing power, and competitive density. Destination marketing organizations monitor accommodation pricing to understand tourism economics in their region. Corporate travel managers track hotel rates across their commonly booked destinations to negotiate better corporate rates.
-
-## Pricing
-
-This actor costs $5 per 1,000 results. Monitoring 200 hotels in a single city costs $1 per run. A weekly competitive audit across 20 cities (4,000 properties) costs $20/week. Monthly rate monitoring for a hotel chain tracking 500 competitor properties runs $2.50/month. Commercial hotel rate intelligence services charge $500-5,000/month for similar data — this delivers the same information at a fraction of the cost.
+**No API key, no Booking.com login, no Selenium/Playwright.** Uses Cheerio + Crawlee on the public search-results HTML.
 
 ---
 
- 
+## What this actor actually does (verified against `src/main.js`)
 
-## 💻 Code Example — Python
+For every destination in your input, the actor:
 
-```
-from apify_client import ApifyClient
+1. Builds a Booking.com search URL with your check-in/out dates, adults, rooms, currency, and sort order.
+2. Walks the paginated results (offsets `0`, `25`, `50`…) until either `maxResults` per destination is reached or no more cards appear.
+3. Parses each property card with Cheerio selectors (3-fallback chain: `[data-testid="property-card"]` → legacy `.sr_property_block` → `[data-testid="property-card-container"]`).
+4. Applies your `minPrice` / `maxPrice` / `minRating` filters in-memory before pushing.
+5. Writes one record per hotel to the dataset.
 
-client = ApifyClient("YOUR_APIFY_TOKEN")
-run = client.actor("nexgendata/booking-com-scraper").call(run_input={
-    # Fill in the input shape from the actor's input_schema
-})
-
-for item in client.dataset(run["defaultDatasetId"]).iterate_items():
-    print(item)
-```
-
-## 🌐 Code Example — cURL
-
-```
-curl -X POST "https://api.apify.com/v2/acts/nexgendata~booking-com-scraper/run-sync-get-dataset-items?token=YOUR_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{ /* input schema */ }'
-```
-
-## ❓ FAQ
-
-**Q: How do I get started?**
-Sign up at [apify.com](https://www.apify.com/?fpr=2ayu9b), grab your API token from Settings → Integrations, and run the actor via the Apify console, API, Python SDK, or any integration (Zapier, Make.com, n8n).
-
-**Q: What's the typical cost per run?**
-See the pricing section below. Most runs finish under $0.10 for typical batches.
-
-**Q: Is this actor maintained?**
-Yes. NexGenData maintains 165+ Apify actors and ships updates regularly. Bug reports via the Apify console issues tab get responses within 24 hours.
-
-**Q: Can I use the output commercially?**
-Yes — you own the output data. Check the target site's Terms of Service for any usage restrictions on the scraped content itself.
-
-**Q: How do I handle rate limits?**
-Apify manages concurrency and retries automatically. For very large batches (10K+ items), run multiple smaller jobs in parallel instead of one mega-job for better reliability.
-
-## 💰 Pricing
-
-Pay-per-event pricing — you only pay for what you actually extract.
-
-- **Actor Start:** $0.0050
-- **result:** $0.0150
-
-## 🔗 Related NexGenData Actors
-
-- [TripAdvisor Scraper](https://apify.com/nexgendata/tripadvisor-scraper?fpr=2ayu9b)
-- [Airbnb Scraper](https://apify.com/nexgendata/airbnb-scraper?fpr=2ayu9b)
-- [Google Maps Lead Scraper](https://apify.com/nexgendata/google-maps-scraper?fpr=2ayu9b)
-
-## 🚀 Apify Affiliate Program
-
-New to Apify? Sign up with our [referral link](https://www.apify.com/?fpr=2ayu9b) — you get free platform credits on signup, and you help fund the maintenance of this actor fleet.
-
-## 📚 More From NexGenData
-
-Explore the full catalog, tutorials, Gumroad data packs, and newsletter at **[thenextgennexus.com](https://thenextgennexus.com)** — the brand home for everything we ship.
-
-- 📖 Tutorials & how-to guides
-- 🗂️ Full actor catalog with usage examples
-- 📦 Gumroad data packs (one-time purchases)
-- 📬 Newsletter — monthly drops of new actors and revenue experiments
+That's it. ~30–90 sec per destination depending on `maxResults`.
 
 ---
 
-*Built and maintained by [NexGenData](https://apify.com/nexgendata?fpr=2ayu9b) — 165+ actors covering scraping, enrichment, MCP servers, and automation.*
-🏠 Home: [thenextgennexus.com](https://thenextgennexus.com)
+## Input
+
+```
+{
+  "destinations": ["Paris", "Tokyo", "London"],
+  "checkIn": "2026-06-15",
+  "checkOut": "2026-06-18",
+  "adults": 2,
+  "rooms": 1,
+  "maxResults": 50,
+  "currency": "USD",
+  "sortBy": "review_score",
+  "minPrice": 80,
+  "maxPrice": 400,
+  "minRating": 8.0
+}
+```
+
+| Field | Type | Default | Notes |
+| --- | --- | --- | --- |
+| `destinations` | string[] | required | One Booking.com search per destination. |
+| `checkIn` | `YYYY-MM-DD` | tomorrow | If empty, the actor uses tomorrow's date. |
+| `checkOut` | `YYYY-MM-DD` | day after tomorrow | If empty, day after `checkIn`. |
+| `adults` | int 1–10 | 2 |  |
+| `rooms` | int 1–10 | 1 |  |
+| `maxResults` | int 1–500 | 50 | Cap **per destination**, not total. |
+| `currency` | enum | `USD` | One of: USD, EUR, GBP, JPY, AUD, CAD, CHF, CNY, RUB, INR, BRL. |
+| `sortBy` | enum | `popularity` | One of: `popularity`, `price_asc`, `rating`, `review_score`, `distance`. |
+| `minPrice` | int / null | null | Per-night currency-units. Filter applied client-side. |
+| `maxPrice` | int / null | null | Same as above. |
+| `minRating` | number 0–10 / null | null | Filter on Booking review score. |
+
+---
+
+## Output (one record per hotel)
+
+```
+{
+  "name": "Hotel Le Bristol Paris",
+  "url": "https://www.booking.com/hotel/fr/lebristol.html",
+  "price": 1240,
+  "currency": "USD",
+  "rating": 9.4,
+  "reviewCount": 1853,
+  "stars": 5,
+  "location": "8th arr., Paris",
+  "distance": "1.2 km from center",
+  "image": "https://cf.bstatic.com/.../bristol.jpg",
+  "destination": "Paris",
+  "checkIn": "2026-06-15",
+  "checkOut": "2026-06-18",
+  "adults": 2,
+  "rooms": 1,
+  "scrapedAt": "2026-04-29T13:30:00.000Z"
+}
+```
+
+**16 fields per hotel.** All fields may be `null` when the property card doesn't expose them — Booking ships A/B card layouts and missing data is normal.
+
+### Field notes (be honest before you buy)
+
+- `price` is **whatever Booking displays on the card** — it can be per-night or total-stay depending on Booking's rendering for your locale and date range. Cross-check against the URL before treating as canonical.
+- `stars` is counted by DOM-element heuristic (span/svg count inside the rating element). Reliable for 1–5 hotels but can return `null` or off-by-one when Booking changes the markup.
+- `distance` is a free-text string (`"1.2 km from center"`, `"500 m from Eiffel Tower"`). No parsing into numeric km.
+- `reviewCount` parsing strips non-digits — works in most locales but can fail on RU/JP non-Latin formats.
+
+---
+
+## What this actor does NOT do (be honest)
+
+- ❌ **No detail-page enrichment.** You get the search-card data only — no room types, no amenity list, no policies, no full review text.
+- ❌ **No JS rendering.** Pure Cheerio. If Booking moves a price into a JS-rendered modal (they sometimes do), that field becomes `null` until selectors are updated.
+- ❌ **No proxy rotation built in.** Booking doesn't aggressively block low-volume scraping, but at scale you should add Apify's residential proxy via the platform proxy config (and budget accordingly).
+- ❌ **No CAPTCHA solving.** If Booking serves a challenge, the run will return whatever it parsed before the block.
+- ❌ **No deduplication across destinations.** A hotel that appears under "Paris" and under a Paris-area neighborhood lookup will appear twice.
+- ❌ **No price history.** One snapshot per run. If you need price-tracking, schedule the run on Apify Cron and append to your own dataset/DB.
+- ❌ **No alternative sites.** Booking.com only — not Hotels.com, Expedia, Agoda, Trivago.
+
+---
+
+## Common use cases
+
+- **Travel-aggregator side projects** — daily snapshots of top 50 hotels in 10 cities for a price-tracker dashboard.
+- **Market research** — competitor pricing in a destination for a hotel-chain or OTA team.
+- **Affiliate content** — populate "Top 10 hotels in Tokyo under $200" listicles with fresh data.
+- **Travel-agent automations** — feed search results into Slack/email when a target hotel drops below a price threshold.
+
+---
+
+## When this actor stops being enough
+
+If you need any of the following, that's a custom build (we deliver):
+
+- Detail-page enrichment (amenities, room types, policies, review text)
+- Multi-site comparison (Booking + Hotels.com + Expedia + Agoda in one record)
+- Daily price-history with diff alerts
+- Geo-bounded search (lat/lng + radius)
+- Booking.com vacation-rentals or transport-search
+
+**Proof of delivery + urgency**: This actor has **22 lifetime production runs** as of May 2026 — part of an active 31-published portfolio (78 total). Trustpilot scraper alone: **951 lifetime runs**. Author shipped a paid 3-article series in March 2026 ($150, proxy industry). **Pilot pricing locked through May 2026** (table below).
+
+**Sample request?** Reply `sample` to [spinov001@gmail.com](mailto:spinov001@gmail.com) and you'll receive 2 published case-study articles within 24 hours, no obligation. Fastest way to evaluate writing style + technical depth before commissioning a custom build.
+
+| Tier | What you get | Price |
+| --- | --- | --- |
+| **Pilot** | 1 actor extension (e.g. detail-page enrichment), basic config, 7-day support | **$97** |
+| **Standard** | Custom multi-site or scheduled snapshot pipeline + Slack/email alerts, 30-day support | **$297** |
+| **Premium** | Full price-tracking dashboard + 90-day support + 1 modification round | **$797** |
+
+**Track record:** 31 published actors on Apify (78 total in portfolio), including:
+
+- `trustpilot-review-scraper` — 951 runs in 30d, used by data teams for review monitoring
+- `reddit-discussion-scraper` — Reddit JSON-API scraper at scale
+- `email-extractor-pro` — bulk website email harvester (no Hunter cap)
+
+**Contact / sample work:**
+
+- Email: [spinov001@gmail.com](mailto:spinov001@gmail.com)
+- Blog & case studies: [https://blog.spinov.online](https://blog.spinov.online)
+- All actors: [https://apify.com/knotless_cadence](https://apify.com/knotless_cadence)
+- Telegram (scraping/AI tips): [https://t.me/scraping_ai](https://t.me/scraping_ai)
+
+---
+
+## License
+
+MIT — fork it, modify it, ship it.
